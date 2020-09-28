@@ -1,1 +1,1 @@
-# Dynamic-intensity-normalization-usingeigen-flat-fields-in-X-ray-imaging
+# Dynamic intensity normalization using eigen flat fields in X-ray imaging
