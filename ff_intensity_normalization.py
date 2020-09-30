@@ -23,6 +23,7 @@ import random
 #from tomobar.supp.suppTools import normaliser
 #from tomobar.methodsDIR import RecToolsDIR
 from data_loader import Observations
+import os
 
 user = 'Daniil'
 user = Observations(user)
@@ -91,7 +92,6 @@ mn = np.mean(whiteVect, axis=0)
 # Substract mean flat field
 M, N = whiteVect.shape
 Data = whiteVect - mn
-
 # =============================================================================
 # EEFs selection - Parallel Analysis
 #      Selection of the number of components for PCA using parallel Analysis.
@@ -196,8 +196,17 @@ def condTVmean(projection, meanFF, FF, DF, x, DS):
     x = scipy.optimize.minimize(cost_func, x, args=(projection, meanFF, FF, DF), method='BFGS')
     
     return x.x
-    
-out_path = './outDIRDFFC/'
+
+path = os.getcwd() #get the current path folder
+out_path = path+'/outDIRDFFC/'
+
+try:
+    os.makedirs(out_path)
+except OSError:
+    print ("Creation of the directory %s failed" % out_path)
+else:
+    print ("Successfully created the directory %s " % out_path)
+
 n_im = len(data_raw)
 xArray = np.zeros((nrEigenflatfields, n_im))
 downsample = 20
@@ -224,7 +233,7 @@ for i in range(10):
     tmp = np.uint16((2**16-1)*tmp)
     print(f"out_{i}.tiff saved!")
     tiff.imsave(f'{out_path}out_{i}.tiff', tmp)
-    
+
 #%% Estimate (Gerard implementation)
 
 # import torch
