@@ -8,28 +8,32 @@ Created on Thu Sep 24 10:28:36 2020
 Dynamic intensity normalization usingeigen flat fields in X-ray imaging
 """
 
+# =============================================================================
+# 12923 - darks [20] - flats [20] - data [1800] - flats [0]
+# 13012 -
+# 13282 - darks [40] - flats [40] - data [1801] - flats [0]
+# =============================================================================
 # reading i23 data
-import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 import tifffile as tiff
-from skimage.transform import rescale, resize, downscale_local_mean
+import scipy
+from skimage.transform import downscale_local_mean
 import random
-from tomobar.supp.suppTools import normaliser
-from tomobar.methodsDIR import RecToolsDIR
+#from tomobar.supp.suppTools import normaliser
+#from tomobar.methodsDIR import RecToolsDIR
+from data_loader import *
 
-vert_tuple = [i for i in range(500,1100)] # selection of vertical slice
+user = 'Gerard'
+user = Observations(user)
 
-h5py_list = h5py.File('/dls/science/users/lqg38422/data/13282/13282.nxs','r')
+num = 12923
+user.create_dataset(num)
 
-darks = h5py_list['/entry1/instrument/flyScanDetector/data'][0:40,vert_tuple,:]
-flats = h5py_list['/entry1/instrument/flyScanDetector/data'][40:80,vert_tuple,:]
-
-data_raw = h5py_list['/entry1/instrument/flyScanDetector/data'][80:1881,vert_tuple,:]
-angles = h5py_list['/entry1/tomo_entry/data/rotation_angle'][:] # extract angles
-angles_rad = angles[80:1881]*np.pi/180.0
-
-h5py_list.close()
+# Load data
+print(f"Loading {num} data...")
+darks, flats, data_raw, angles_rad = user.datasets[num].load_data()
+print("Done!")
 
 #%% Image + DF + FF display
 
@@ -70,7 +74,7 @@ plt.imshow(output, cmap='gray')
 #%% Dynamic Flat Field Correction (Matlab translation)
 # =============================================================================
 # NOTES:
-# · Why I only get 1 EEF?
+# · Should we normalize the data at the start?
 # =============================================================================
 
 # Load frames
@@ -80,6 +84,7 @@ whiteVect = np.zeros((flats.shape[0], flats.shape[1]*flats.shape[2]))
 k = 0
 for ff in flats:
     whiteVect[k] = ff.flatten() - meanDarkfield.flatten()
+    k += 1
 
 mn = np.mean(whiteVect, axis=0)
     
@@ -107,8 +112,8 @@ def parallelAnalysis(flatFields, repetitions):
     mean_flat_fields_EFF = np.mean(flatFields, axis=0)
     F = flatFields - mean_flat_fields_EFF
     D1, V1 = np.linalg.eig(np.cov(F))
-    
     selection = np.zeros((1,H))
+    # mean + 2 * std
     selection[:,D1>(np.mean(keepTrack, axis=1) + 2 * np.std(keepTrack, axis=1))] = 1
     numberPC = np.sum(selection)
     return V1, D1, int(numberPC)
@@ -122,12 +127,12 @@ print(f"{nrEigenflatfields} eigen flat fields selected!")
 # calculation eigen flat fields
 C, H, W = data_raw.shape
 eig0 = mn.reshape((H,W))
-EFF = np.zeros((nrEigenflatfields, H, W))
+EFF = np.zeros((nrEigenflatfields+1, H, W)) #n_EFF + 1 eig0
 print("Calculating EFFs:")
-for i in range(nrEigenflatfields):
-    EFF[i] = (np.matmul(Data.T, V1[M-i-1]).T).reshape((H,W))
+EFF[0] = eig0
+for i in range(nrEigenflatfields-1):
+    EFF[i+1] = (np.matmul(Data.T, V1[-i]).T).reshape((H,W)) #why the last ones?
 print("Done!")
-# works
 
 # Filter EFFs (we skip this step since we want to try DL)
 
@@ -161,7 +166,8 @@ def normalize(im):
 # Function cost: objective function to optimize weights
 # =============================================================================
 
-def cost_func(projections, meanFF, FF, DF, x):
+def cost_func(var):
+    projections, meanFF, FF, DF, x = var
     FF_eff = np.zeros((FF.shape[1], FF.shape[2]))
     for i in range(len(FF)):
         FF_eff  = FF_eff + x[i] * FF[i]
@@ -176,20 +182,21 @@ def cost_func(projections, meanFF, FF, DF, x):
 # eigen flat fields.
 # =============================================================================
 
-def condTVmean(projections,meanFF,FF,DF,x,DS):
+def condTVmean(projection, meanFF, FF, DF, x, DS):
     # Downsample image
-    projections = downscale_local_mean(projections, (DS, DS))
+    projection = downscale_local_mean(projection, (DS, DS))
     meanFF = downscale_local_mean(meanFF, (DS, DS))
-    FF2 = np.zeros((FF.shape[0], meanFF.shape[1], meanFF.shape[2]))
+    FF2 = np.zeros((FF.shape[0], meanFF.shape[0], meanFF.shape[1]))
     for i in range(len(FF)):
         FF2[i] = downscale_local_mean(FF[i], (DS, DS))
     FF = FF2
     DF = downscale_local_mean(DF, (DS, DS))
     
-    # Optimize coefficients
-    cost = cost_func(projections, meanFF, FF, DF, x)
-    print(f"Cost: {cost}")
-    # optimization function
+    # Optimize weights (x)
+    var = [projection, meanFF, FF, DF, x]
+    x = scipy.optimize.minimize(cost_func, var, method='BFGS')
+    
+    return x.x
     
 out_path = './outDIRDFFC/'
 n_im = len(data_raw)
@@ -197,12 +204,12 @@ xArray = np.zeros((nrEigenflatfields, n_im))
 downsample = 20
 for i in range(n_im):
     print("Estimation projection:")
-    projection = data_raw[i]
+    projection = normalize(data_raw[i])
     # Estimate weights for a single projection
+    meanFF = EFF[0]
+    FF = EFF[1:nrEigenflatfields]
     weights = np.zeros(nrEigenflatfields)
-    x=condTVmean(projection, EFF[0],\
-                     EFF[1:nrEigenflatfields],\
-                     meanDarkfield,weights,downsample)
+    x=condTVmean(projection, meanFF, FF, meanDarkfield, weights, downsample)
     xArray[:,i]=x
     
     # Dynamic FFC
@@ -216,76 +223,8 @@ for i in range(n_im):
     tmp[np.isinf(tmp)] = 10^5
     tmp = normalize(tmp)
     tmp = np.uint16((2^16-1)*tmp)
-    tiff.imsave(f'{out_path}out_{i}.tiff', tmp)
+    #tiff.imsave(f'{out_path}out_{i}.tiff', tmp)
     
-    
-    
-
-
-#%% Dynamic Flat Field Correction
-
-def normalize(im):
-    return (im - im.min()) / (im.max() - im.min())
-
-# def vector_matrix(im):
-#     c, h, w = im.shape
-#     M = np.zeros((h*w, c))
-#     for n,frame in enumerate(im):
-#         M[:,n] = normalize(frame.flatten())
-    return M
-
-def flatten(im):
-    return np.expand_dims(im.flatten(), axis=1)
-
-data_raw = data_raw[:100]
-
-mean_d = normalize(np.mean(darks, axis=0))
-mean_f = normalize(np.mean(flats, axis=0))
-flat_mean_d = flatten(mean_d)
-flat_mean_f = flatten(mean_f)
-
-
-# centered flat field matrix (columns: ff vectors)
-M = vector_matrix(flats)
-
-# centered FF matrix
-A = M - flat_mean_f
-
-# covariance matrix 
-C = np.matmul(A.T, A)
-
-# eigenvalues and eigenvectors
-eigvals, eigvects = np.linalg.eig(C)
-
-#%% Down-scale images
-# =============================================================================
-# The dynamic flat field weights{wjk}were estimated on 20 times down sampled 
-# projections and afterwards applied to the full scaleprojections. Due to the 
-# limited amount of truncation the dynamic FFC projections were rescaledusing the 
-# first Helgason-Ludwig consistency condition
-# =============================================================================
-
-# Option 1: Resize
-image = data_raw[0]
-image_downscaled = downscale_local_mean(image, (10, 10))
-
-#%% EFFs selection - variation percentil
-variation = np.cumsum(eigvals)/np.cumsum(eigvals).max()
-plt.plot(variation)
-plt.xlabel('number of components')
-plt.ylabel('cumulative explained variance')
-
-p = np.percentile(variation, 90)
-idx = np.argwhere(variation >= p)[0][0]
-print('90% percentile:', p)
-print('Idx:', idx)
-
-EFF = np.matmul(A, eigvects)
-uk = EFF[:,idx].reshape((800,1199))
-
-# filtering
-# we skip this since we're using DL
-
 #%% Estimate (Gerard implementation)
 
 # import torch
@@ -335,50 +274,7 @@ uk = EFF[:,idx].reshape((800,1199))
 #     cost = c_w * sum(magn)
 #     return torch.mean(torch.tensor(cost, requires_grad=True))
 
-#%%
-# network = Network()
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# network.to(device)
-# mean_f_gpu = torch.tensor(mean_f).to(device)
-# mean_d_gpu = torch.tensor(mean_d).to(device)
-# uk_gpu = torch.tensor(uk).to(device)
-# loss_list = []
 
-# # Hyperparameters
-# lr = 0.00001
-# optimizer = optim.Adam(network.parameters(), lr=0.01)
-# num_epoch = 100
-
-# for n in range(num_epoch):
-#     epoch_cost = []
-#     total_loss = 0
-#     total_correct = 0
-    
-#     for i in range(len(data_raw)):
-#         data = torch.tensor(normalize(data_raw[i]).astype(np.float32), requires_grad=True, dtype=torch.float32)
-#         data = data.unsqueeze(0).unsqueeze(0).to(device)
-        
-#         preds = network(data)
-        
-#         weight = preds[0][0]
-        
-#         loss = cost_function(data[0][0], mean_f_gpu, mean_d_gpu, weight, uk_gpu)
-        
-#         loss.backward()
-#         optimizer.step()
-#         epoch_cost.append(loss.item())
-        
-#         if i%500 == 0: print(f"Iteration {i} loss: {loss.item()}")
-        
-#         torch.cuda.empty_cache()
-#         del data
-#         del preds
-#         del weight
-
-
-#     print(f"Epoch {n} mean loss: {sum(epoch_cost)/len(epoch_cost)}")
-    
-#     loss_list.append(sum(epoch_cost)/len(epoch_cost))
 
 
 
