@@ -146,19 +146,19 @@ def normalize(im):
 # Estimate abundance of weights in projections
 # =============================================================================
 # Conventional FFC
-# out_path = "./outDIRDFFC/"
+# out_path = "./outDIRCFFC/"
 # n_im = len(data_raw)
 # meanVector = np.zeros((1, n_im))
 # for i in range(n_im):
 #     projection = data_raw[i]
 #     tmp = (projection - meanDarkfield)/EFF[0]
-#     meanVector[i] = np.mean(tmp)
+#     meanVector[:,i] = np.mean(tmp)
 #     
 #     tmp[tmp<0] = 0
 #     tmp = -np.log(tmp)
 #     tmp[np.isinf(tmp)] = 10^5
 #     tmp = normalize(tmp)
-#     tmp = np.uint16((2^16-1)*tmp)
+#     tmp = np.uint16((2**16-1)*tmp)
 #     tiff.imsave(f'{out_path}out_{i}.tiff', tmp)
 # =============================================================================
 
@@ -166,8 +166,8 @@ def normalize(im):
 # Function cost: objective function to optimize weights
 # =============================================================================
 
-def cost_func(var):
-    projections, meanFF, FF, DF, x = var
+def cost_func(x, *args):
+    (projections, meanFF, FF, DF) = args
     FF_eff = np.zeros((FF.shape[1], FF.shape[2]))
     for i in range(len(FF)):
         FF_eff  = FF_eff + x[i] * FF[i]
@@ -193,8 +193,7 @@ def condTVmean(projection, meanFF, FF, DF, x, DS):
     DF = downscale_local_mean(DF, (DS, DS))
     
     # Optimize weights (x)
-    var = [projection, meanFF, FF, DF, x]
-    x = scipy.optimize.minimize(cost_func, var, method='BFGS')
+    x = scipy.optimize.minimize(cost_func, x, args=(projection, meanFF, FF, DF), method='BFGS')
     
     return x.x
     
@@ -202,12 +201,12 @@ out_path = './outDIRDFFC/'
 n_im = len(data_raw)
 xArray = np.zeros((nrEigenflatfields, n_im))
 downsample = 20
-for i in range(n_im):
+for i in range(10):
     print("Estimation projection:")
-    projection = normalize(data_raw[i])
+    projection = data_raw[i]
     # Estimate weights for a single projection
     meanFF = EFF[0]
-    FF = EFF[1:nrEigenflatfields]
+    FF = EFF[1:]
     weights = np.zeros(nrEigenflatfields)
     x=condTVmean(projection, meanFF, FF, meanDarkfield, weights, downsample)
     xArray[:,i]=x
@@ -222,8 +221,9 @@ for i in range(n_im):
     tmp = -np.log(tmp)
     tmp[np.isinf(tmp)] = 10^5
     tmp = normalize(tmp)
-    tmp = np.uint16((2^16-1)*tmp)
-    #tiff.imsave(f'{out_path}out_{i}.tiff', tmp)
+    tmp = np.uint16((2**16-1)*tmp)
+    print(f"out_{i}.tiff saved!")
+    tiff.imsave(f'{out_path}out_{i}.tiff', tmp)
     
 #%% Estimate (Gerard implementation)
 
