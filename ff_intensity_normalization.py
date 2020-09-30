@@ -22,9 +22,9 @@ from skimage.transform import downscale_local_mean
 import random
 #from tomobar.supp.suppTools import normaliser
 #from tomobar.methodsDIR import RecToolsDIR
-from data_loader import *
+from data_loader import Observations
 
-user = 'Gerard'
+user = 'Daniil'
 user = Observations(user)
 
 num = 12923
@@ -37,7 +37,7 @@ print("Done!")
 
 #%% Image + DF + FF display
 
-n_im = random.randrange(0, 40)
+n_im = random.randrange(0, np.size(flats,0))
 print(f"Image number {n_im}")
 
 fig= plt.figure()

@@ -11,12 +11,13 @@ Load datasets from beamline i23
 # Obj
 
 class Observations:
-    
     def __init__(self, user):
-        if user in ['Daniil']: #write your FedID here
-            self.path = None
+        if user in ['Daniil', 'kjy41806']: #write your FedID here
+            self.path = '/media/algol/F2FE9B0BFE9AC76F/__I23_data__/RAW/'
         elif user in ['Gerard', 'lqg38422']:
             self.path = '/dls/science/users/lqg38422/data/'
+        else:
+            return
         
         self.datasets = dict()
         
@@ -70,7 +71,10 @@ class Dataset:
 # EXAMPLE
 # =============================================================================
 
-# Log in        
+# Log in
+"""
+from data_loader import *
+
 user = 'Gerard'
 user = Observations(user) 
 
@@ -81,7 +85,7 @@ user.create_dataset(num)
 
 # Load data
 darks, flats, data_raw, angles_rad = user.datasets[num].load_data()
-
+"""
 
 
 
