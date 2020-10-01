@@ -74,21 +74,11 @@ class Dataset:
 # Log in
 """
 from data_loader import *
-
 user = 'Gerard'
 user = Observations(user) 
-
 # Create dataset
 num = 12923
-
 user.create_dataset(num)
-
 # Load data
 darks, flats, data_raw, angles_rad = user.datasets[num].load_data()
 """
-
-
-
-
-
-

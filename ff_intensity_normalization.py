@@ -13,19 +13,18 @@ Dynamic intensity normalization usingeigen flat fields in X-ray imaging
 # 13012 -
 # 13282 - darks [40] - flats [40] - data [1801] - flats [0]
 # =============================================================================
+
 # reading i23 data
 import numpy as np
+import os
 import matplotlib.pyplot as plt
 import tifffile as tiff
 import scipy
 from skimage.transform import downscale_local_mean
 import random
-#from tomobar.supp.suppTools import normaliser
-#from tomobar.methodsDIR import RecToolsDIR
 from data_loader import Observations
-import os
 
-user = 'Daniil'
+user = 'Gerard'
 user = Observations(user)
 
 num = 12923
@@ -38,7 +37,7 @@ print("Done!")
 
 #%% Image + DF + FF display
 
-n_im = random.randrange(0, np.size(flats,0))
+n_im = random.randrange(0, 40)
 print(f"Image number {n_im}")
 
 fig= plt.figure()
@@ -73,10 +72,6 @@ plt.title("Image reconstruction")
 plt.imshow(output, cmap='gray')
 
 #%% Dynamic Flat Field Correction (Matlab translation)
-# =============================================================================
-# NOTES:
-# · Should we normalize the data at the start?
-# =============================================================================
 
 # Load frames
 meanDarkfield = np.mean(darks, axis=0)
@@ -92,6 +87,7 @@ mn = np.mean(whiteVect, axis=0)
 # Substract mean flat field
 M, N = whiteVect.shape
 Data = whiteVect - mn
+
 # =============================================================================
 # EEFs selection - Parallel Analysis
 #      Selection of the number of components for PCA using parallel Analysis.
@@ -130,7 +126,7 @@ eig0 = mn.reshape((H,W))
 EFF = np.zeros((nrEigenflatfields+1, H, W)) #n_EFF + 1 eig0
 print("Calculating EFFs:")
 EFF[0] = eig0
-for i in range(nrEigenflatfields-1):
+for i in range(nrEigenflatfields):
     EFF[i+1] = (np.matmul(Data.T, V1[-i]).T).reshape((H,W)) #why the last ones?
 print("Done!")
 
@@ -142,25 +138,6 @@ print("Done!")
 
 def normalize(im):
     return (im - im.min()) / (im.max() - im.min())
-
-# Estimate abundance of weights in projections
-# =============================================================================
-# Conventional FFC
-# out_path = "./outDIRCFFC/"
-# n_im = len(data_raw)
-# meanVector = np.zeros((1, n_im))
-# for i in range(n_im):
-#     projection = data_raw[i]
-#     tmp = (projection - meanDarkfield)/EFF[0]
-#     meanVector[:,i] = np.mean(tmp)
-#     
-#     tmp[tmp<0] = 0
-#     tmp = -np.log(tmp)
-#     tmp[np.isinf(tmp)] = 10^5
-#     tmp = normalize(tmp)
-#     tmp = np.uint16((2**16-1)*tmp)
-#     tiff.imsave(f'{out_path}out_{i}.tiff', tmp)
-# =============================================================================
 
 # =============================================================================
 # Function cost: objective function to optimize weights
@@ -197,20 +174,52 @@ def condTVmean(projection, meanFF, FF, DF, x, DS):
     
     return x.x
 
+# =============================================================================
+# Conventional FFC
+# =============================================================================
+
+out_path = "./outDIRCFFC/"
 path = os.getcwd() #get the current path folder
 out_path = path+'/outDIRDFFC/'
-
 try:
     os.makedirs(out_path)
 except OSError:
     print ("Creation of the directory %s failed" % out_path)
 else:
     print ("Successfully created the directory %s " % out_path)
-
 n_im = len(data_raw)
-xArray = np.zeros((nrEigenflatfields, n_im))
-downsample = 20
+meanVector = np.zeros((1, n_im))
 for i in range(10):
+    projection = data_raw[i]
+    tmp = (projection - meanDarkfield)/EFF[0]
+    meanVector[:,i] = np.mean(tmp)
+    
+    tmp[tmp<0] = 0
+    tmp = -np.log(tmp)
+    tmp[np.isinf(tmp)] = 10^5
+    tmp = normalize(tmp)
+    tmp = np.uint16((2**16-1)*tmp)
+    tiff.imsave(f'{out_path}out_{i}.tiff', tmp)
+
+# =============================================================================
+# Dynamic FFC
+# =============================================================================
+
+out_path = './outDIRDFFC/'
+path = os.getcwd() #get the current path folder
+out_path = path+'/outDIRDFFC/'
+try:
+    os.makedirs(out_path)
+except OSError:
+    print ("Creation of the directory %s failed" % out_path)
+else:
+    print ("Successfully created the directory %s " % out_path)
+    
+n_im = 10
+xArray = np.zeros((nrEigenflatfields, n_im))
+keepImages = np.zeros((n_im, H, W))
+downsample = 20
+for i in range(n_im):
     print("Estimation projection:")
     projection = data_raw[i]
     # Estimate weights for a single projection
@@ -224,8 +233,9 @@ for i in range(10):
     FFeff = np.zeros(meanDarkfield.shape)
     for j in range(nrEigenflatfields):
         FFeff = FFeff + x[j] * EFF[j+1]
-        
+    
     tmp = (projection - meanDarkfield)/(EFF[0] + FFeff)
+    keepImages[i] = tmp.copy()
     tmp[tmp<0] = 0
     tmp = -np.log(tmp)
     tmp[np.isinf(tmp)] = 10^5
@@ -233,6 +243,23 @@ for i in range(10):
     tmp = np.uint16((2**16-1)*tmp)
     print(f"out_{i}.tiff saved!")
     tiff.imsave(f'{out_path}out_{i}.tiff', tmp)
+    
+#%% Evaluating results
+
+# =============================================================================
+# MSE (Mean Squared Error): mesaures the similarity between projections and corrections
+# =============================================================================
+
+def MSE(raw_im, corrected_im):
+    return np.square(np.subtract(raw_im, corrected_im)).mean()
+
+for i in range(n_im):
+    proj = data_raw[i]
+    clean = keepImages[i]
+    res = MSE(proj, clean)
+    print(f"Image number {i} - MSE: {res}")
+
+
 
 #%% Estimate (Gerard implementation)
 
