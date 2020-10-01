@@ -6,6 +6,8 @@ Created on Thu Sep 24 10:28:36 2020
 @author: Gerard Jover Pujol
 
 Dynamic intensity normalization usingeigen flat fields in X-ray imaging
+following  the paper by V. Van Nieuwenhove
+https://visielab.uantwerpen.be/sites/default/files/ffc_2016.pdf
 """
 
 # =============================================================================
