@@ -26,7 +26,7 @@ from skimage.transform import downscale_local_mean
 import random
 from data_loader import Observations
 
-user = 'Gerard'
+user = 'Daniil'
 user = Observations(user)
 
 num = 12923
