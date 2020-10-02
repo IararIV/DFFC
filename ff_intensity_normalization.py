@@ -6,6 +6,8 @@ Created on Thu Sep 24 10:28:36 2020
 @author: Gerard Jover Pujol
 
 Dynamic intensity normalization usingeigen flat fields in X-ray imaging
+following  the paper by V. Van Nieuwenhove
+https://visielab.uantwerpen.be/sites/default/files/ffc_2016.pdf
 """
 
 # =============================================================================
@@ -24,7 +26,7 @@ from skimage.transform import downscale_local_mean
 import random
 from data_loader import Observations
 
-user = 'Gerard'
+user = 'Daniil'
 user = Observations(user)
 
 num = 12923
