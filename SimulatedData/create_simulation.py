@@ -73,10 +73,10 @@ I0  = 8000; # Source intensity
 flatsnum = 80 # the number of the flat fields required
 
 [projData3D_noisy, flatsSIM] = synth_flats(projData3D_analyt,
-                                           source_intensity = I0, source_variation=0.015,\
+                                           source_intensity = I0, source_variation=0.035,\
                                            arguments_Bessel = (1,10,10,12),\
-                                           strip_height = 0.05, strip_thickness = 1,\
-                                           sigmasmooth = 3, flatsnum=flatsnum)
+                                           strip_height = 0.15, strip_thickness = 1,\
+                                           sigmasmooth = 1, flatsnum=flatsnum)
 #del projData3D_analyt
 plt.figure()
 plt.subplot(121)
