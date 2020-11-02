@@ -23,10 +23,8 @@
 %University of Antwerp
 
 %% parameters
-
 % data
 addpath('../../Vincent_code_func/');
-
 
 % Directory with raw dark fields, flat fields and projections in .tif format
 projDir=  '~/Documents/DEV/DATA_TEMP/PSI_Phantom_White_Beam_Tomo/sample/';        
@@ -40,11 +38,13 @@ numType = '%03d';
 
 disp('load projections:')
 sizeN = 2048;
-projdata = single(zeros(sizeN,sizeN,10));
-projNo = 10;
+sizeCut = 200;
+projNo = 200;
 
+projdata = single(zeros(sizeCut,sizeN,projNo));
 for ii=1:projNo
-projdata(:,:,ii) = single(imread([projDir 'IMAT00006388_PSI_cylinder_Sample_' num2str(ii-1,numType) fileFormat]));
+ projection = single(imread([projDir 'IMAT00006388_PSI_cylinder_Sample_' num2str(ii-1,numType) fileFormat]));
+ projdata(:,:,ii) = projection(1:sizeCut,:);
 end
 
 nrImage = zeros(size(projdata,3));
@@ -56,31 +56,39 @@ disp('load dark and flat fields:')
 disp('Load dark fields ...')
 dark=zeros([det_horiz det_vert 10]);
 for ii=1:10
-dark(:,:,ii) = single(imread([outDIRDFFC 'IMAT00006385_PSI_cylinder_dark_' num2str(ii-1,numType) fileFormat]));
+dark_temp = single(imread([outDIRDFFC 'IMAT00006385_PSI_cylinder_dark_' num2str(ii-1,numType) fileFormat]));
+dark(:,:,ii) = dark_temp(1:sizeCut,:);
 end
 
 meanDarkfield = mean(dark,3);
 
 %load white fields
-whiteVec = zeros([det_horiz*det_vert 59]);
-numType = '%04d'; 
-disp('Load white fields ...')
-for ii=1:59
-    whiteVec(:,ii) = double(reshape((imread([outDIRFFC 'Flat_' num2str(ii-1,numType) fileFormat])),det_horiz*det_vert,1)) - meanDarkfield(:);    
-end
+% whiteVec = zeros([det_horiz*det_vert 59]);
+%numType = '%04d'; 
+%disp('Load white fields ...')
+%for ii=1:29
+%    whiteVec(:,ii) = double(reshape((imread([outDIRFFC 'Flat_' num2str(ii-1,numType) fileFormat])),det_horiz*det_vert,1)) - meanDarkfield(:);    
+%end
+
+% load corrected flat-fields
+flats = h5read('/home/algol/Documents/DEV/DATA_TEMP/PSI_Phantom_White_Beam_Tomo/flats_corrected.h5', '/flats');
+flats_s = flats(1:sizeCut,:,:);
+whiteVec = reshape(flats_s, det_horiz*det_vert,59);
+
 mn = mean(whiteVec,2);
+clear flats flats_s
 %%
 [M,N] = size(whiteVec);
 Data = whiteVec;
 % substract mean flat field
 %Data = whiteVec - repmat(mn,1,N);
-clear whiteVec dark
+%clear whiteVec dark
 %% calculate Eigen Flat fields
 % Parallel Analysis
-nrPArepetions = 5;
+nrPArepetions = 10;
 disp('Parallel Analysis:')
 [V1, D1, nrEigenflatfields]=parallelAnalysis(Data,nrPArepetions);
-disp([int2str(nrEigenflatfields) ' eigen flat fields selected.'])
+disp([int2str(nrEigenflatfields) ' eigen flat fields are selected.'])
 %%
 %calculation eigen flat fields
 eig0 = reshape(mn, det_horiz, det_vert);
@@ -90,15 +98,15 @@ for ii=1:nrEigenflatfields
     EigenFlatfields(:,:,ii+1) = reshape(Data*V1(:,N-ii+1), det_horiz, det_vert);
 end
 % Filter Eigen flat fields
-addpath('.\BM3D') 
+% addpath('.\BM3D') 
 
-display('Filter eigen flat fields ...')
+disp('Filter eigen flat fields ...')
 filteredEigenFlatfields=zeros(det_horiz, det_vert, 1+nrEigenflatfields);
 
 for ii=2:1+nrEigenflatfields
     display(['filter eigen flat field ' int2str(ii-1)])
     tmp=(EigenFlatfields(:,:,ii)-min(min(EigenFlatfields(:,:,ii))))/(max(max(EigenFlatfields(:,:,ii)))-min(min(EigenFlatfields(:,:,ii))));
-    [~,tmp2]=BM3D(1,single(tmp));
+    [~,tmp2]=BM3D(1, single(tmp), 0.25);
     filteredEigenFlatfields(:,:,ii)=(tmp2*(max(max(EigenFlatfields(:,:,ii))) - min(min(EigenFlatfields(:,:,ii))))) + min(min(EigenFlatfields(:,:,ii)));
 end
 %filteredEigenFlatfields = EigenFlatfields; 
@@ -106,8 +114,6 @@ end
 %% estimate abundance of weights in projections
 % options output images
 scaleOutputImages=  [0 1];          %output images are scaled between these values
-% algorithm parameters
-nrPArepetions=      10;             % number of parallel analysis repetions
 
 norm_proj_CFF = single(zeros(det_horiz, det_vert, projections));
 
@@ -129,10 +135,10 @@ for ii=1:length(nrImage)
     %tmp=uint16((2^16-1)*tmp);
     %imwrite(tmp,[outDIRFFC + outPrefixFFC + num2str(ii,numType) + fileFormat]);
 end
-figure; imshow(norm_proj_CFF(:,:,5), [-0.1 0.3]);
+figure; imshow(norm_proj_CFF(:,:,5), [-0.1 0.4]);
 %%
 norm_proj_DFF = single(zeros(det_horiz, det_vert, projections));
-downsample=         2;              % amount of downsampling during dynamic flat field estimation (integer between 1 and 20)
+downsample=         4;              % amount of downsampling during dynamic flat field estimation (integer between 1 and 20)
 
 xArray=zeros(nrEigenflatfields,length(nrImage));
 for ii=1:length(nrImage)
@@ -161,6 +167,6 @@ for ii=1:length(nrImage)
     %tmp=uint16((2^16-1)*tmp);
     %imwrite(tmp,[outDIRDFFC + outPrefixFFC + num2str(ii,numType) + fileFormat]);
 end
-figure; imshow(squeeze(norm_proj_DFF(:,:,5)), [-0.1 0.3]);
+figure; imshow(squeeze(norm_proj_DFF(:,:,5)), [-0.1 0.4]);
 
 %save([outDIRDFFC '\' 'parameters.mat'], 'xArray')

@@ -5,6 +5,8 @@ Created on Thu Oct 29 11:21:44 2020
 @author: lqg38422
 """
 
+import matplotlib.pyplot as plt
+
 import numpy as np
 import scipy
 from skimage.transform import downscale_local_mean
@@ -12,13 +14,13 @@ import bm3d
 
 def DFFC(data, flats, darks, downsample=20):
     # Load frames
-    meanDarkfield = np.mean(darks, axis=0, dtype=np.float64)
-    whiteVect = np.zeros((flats.shape[0], flats.shape[1]*flats.shape[2]), dtype=np.float64)
+    meanDarkfield = np.mean(darks, axis=0, dtype=np.float32)
+    whiteVect = np.zeros((flats.shape[0], flats.shape[1]*flats.shape[2]), dtype=np.float32)
     k = 0
     for ff in flats:
-        tmp = ff - meanDarkfield
-        whiteVect[k] = tmp.flatten() - meanDarkfield.flatten()
-        k += 1  
+        #whiteVect[k] = ff.flatten() - meanDarkfield.flatten()
+        whiteVect[k] = ff.flatten()
+        k += 1
     mn = np.mean(whiteVect, axis=0)
 
     # Substract mean flat field
@@ -64,18 +66,20 @@ def DFFC(data, flats, darks, downsample=20):
     # Calculation eigen flat fields
     C, H, W = data.shape
     eig0 = mn.reshape((H,W))
-    EFF = np.zeros((nrEigenflatfields+1, H, W), dtype=np.float64) #n_EFF + 1 eig0
+    EFF = np.zeros((nrEigenflatfields+1, H, W), dtype=np.float32) #n_EFF + 1 eig0
     print("Calculating EFFs:")
     EFF[0] = eig0
     for i in range(nrEigenflatfields):
         EFF[i+1] = (np.matmul(Data.T, V1[-i]).T).reshape((H,W))
     print("Done!")
     
+    
     # Denoise eigen flat fields
     print("Denoising EFFs:")
     for i in range(1, len(EFF)):
-        EFF[i] = bm3d.bm3d(EFF[i], sigma_psd=30/255,\
-                            stage_arg=bm3d.BM3DStages.ALL_STAGES).astype(np.float64)
+        EFF[i,:,:] = bm3d.bm3d(EFF[i,:,:], sigma_psd=0.1)
+        #EFF[i] = bm3d.bm3d(EFF[i], sigma_psd=30/255.0,\
+        #                    stage_arg=bm3d.BM3DStages.ALL_STAGES).astype(np.float32)
     print("Done!")
     
     # =============================================================================
@@ -109,13 +113,13 @@ def DFFC(data, flats, darks, downsample=20):
         DF = downscale_local_mean(DF, (DS, DS))
 
         # Optimize weights (x)
-        x = scipy.optimize.minimize(cost_func, x, args=(projection, meanFF, FF, DF), method='BFGS', tol=1e-8)
+        x = scipy.optimize.minimize(cost_func, x, args=(projection, meanFF, FF, DF), method='BFGS', tol=1e-6)
 
         return x.x
 
     n_im = len(data)
     print("DFFC:")
-    clean_DFFC = np.zeros((n_im, H, W), dtype=np.float64)
+    clean_DFFC = np.zeros((n_im, H, W), dtype=np.float32)
     for i in range(n_im):
         if i%100 == 0: print("Iteration", i)
         #print("Estimation projection:")
