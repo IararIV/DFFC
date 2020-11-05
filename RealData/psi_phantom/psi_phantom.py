@@ -24,11 +24,12 @@ FLATS_PATH = 'C:/Users/lqg38422/Desktop/PSI_Phantom/flat-field/'
 DARKS_PATH = 'C:/Users/lqg38422/Desktop/PSI_Phantom/dark-field/'
 
 N_size = 2048
-N_cut = 1548
-n_proj = 10
+N_cut = 500
+n_proj = 10 #943
 
 #%%
-projections = np.float32(np.zeros((N_cut, n_proj, N_size)))
+print("Loading projections...")
+projections = np.float64(np.zeros((N_cut, n_proj, N_size)))
 imagename = 'IMAT00006388_PSI_cylinder_Sample_'
 for i in range(0,n_proj):
     index_str = str(i).zfill(3)
@@ -37,13 +38,16 @@ for i in range(0,n_proj):
     
 plt.figure()
 plt.imshow(projections[:,5,:], vmin=0, vmax= 15000, cmap="gray")
+print("Done!")
 #%%
-darks = np.float32(np.zeros((N_cut, 10, N_size)))
+print("Loading darks...")
+darks = np.float64(np.zeros((N_cut, 10, N_size)))
 imagename = 'IMAT00006385_PSI_cylinder_dark_'
 for i in range(0,10):
     index_str = str(i).zfill(3)
     tmp = np.array(Image.open(DARKS_PATH + imagename + index_str + ".tif"))
     darks[:,i,:] = tmp[:N_cut,:]
+print("Done!")
 #%%
 """
 flats = np.float32(np.zeros((500, 59, 1548)))
@@ -61,20 +65,24 @@ for i in range(0,59):
     flats[:,i,:] = tmp[500:1000,500:]
     
 """
+print("Loading flats...")
 h5f = h5py.File("C:/Users/lqg38422/Desktop/PSI_Phantom/flats_corrected.h5", "r")
-flats_full = np.array(h5f["/flats"], dtype=np.float32)
+flats_full = np.array(h5f["/flats"], dtype=np.float64)
 flats_full = np.swapaxes(flats_full, 1, 0)
 flats = flats_full[:N_cut,:,:]
 del flats_full
 plt.figure()
 plt.imshow(flats[:,5,:], vmin=0, vmax= 15000, cmap="gray")
+print("Done!")
 
 #%%
 # normalising projections:
+print("Mean normalisation...")
 projections_norm = normaliser(projections, flats, darks, log='true', method='mean')
 plt.figure()
 plt.axis('off')
 plt.imshow(projections_norm[:,5,:], vmin=-0.1, vmax= 0.4, cmap="gray")
+print("Done!")
 
 #%%
 import numpy as np
@@ -84,13 +92,11 @@ import bm3d
 
 def DFFC(data, flats, darks, downsample=20):
     # Load frames
-    meanDarkfield = np.mean(darks, axis=0, dtype=np.float32)
-    whiteVect = np.zeros((flats.shape[0], flats.shape[1]*flats.shape[2]), dtype=np.float32)
-    k = 0
-    for ff in flats:
+    meanDarkfield = np.mean(darks, axis=0, dtype=np.float64)
+    whiteVect = np.zeros((flats.shape[0], flats.shape[1]*flats.shape[2]), dtype=np.float64)
+    for i in range(len(flats)):
         #whiteVect[k] = ff.flatten() - meanDarkfield.flatten()
-        whiteVect[k] = ff.flatten()
-        k += 1
+        whiteVect[i] = flats[i].flatten()
     mn = np.mean(whiteVect, axis=0)
 
     # Substract mean flat field
@@ -114,7 +120,7 @@ def DFFC(data, flats, darks, downsample=20):
     def parallelAnalysis(flatFields, repetitions):
         stdEFF = np.std(flatFields, axis=0, ddof=1, dtype=np.float64)
         H, W = flatFields.shape
-        keepTrack = np.zeros((H, repetitions))
+        keepTrack = np.zeros((H, repetitions), dtype=np.float64)
         stdMatrix = np.tile(stdEFF, (H, 1))
         for i in range(repetitions):
             print(f"Parallel Analysis - repetition {i}")
@@ -159,7 +165,7 @@ def DFFC(data, flats, darks, downsample=20):
         print(f"Denoising EFF {i}")
         EFF[i,:,:] = bm3d.bm3d(EFF[i,:,:], sigma_psd=0.1)
         #EFF[i] = bm3d.bm3d(EFF[i], sigma_psd=30/255.0,\
-        #                    stage_arg=bm3d.BM3DStages.ALL_STAGES).astype(np.float32)
+        #                    stage_arg=bm3d.BM3DStages.ALL_STAGES).astype(np.float64)
     print("Done!")
     
     # =============================================================================
@@ -199,9 +205,9 @@ def DFFC(data, flats, darks, downsample=20):
 
     n_im = len(data)
     print("DFFC:")
-    clean_DFFC = np.zeros((n_im, H, W), dtype=np.float32)
+    clean_DFFC = np.zeros((n_im, H, W), dtype=np.float64)
     for i in range(n_im):
-        if i%100 == 0: print("Iteration", i)
+        if i%25 == 0: print("Iteration", i)
         #print("Estimation projection:")
         projection = data[i]
         # Estimate weights for a single projection
@@ -220,6 +226,7 @@ def DFFC(data, flats, darks, downsample=20):
     return clean_DFFC
 
 #%%
+print("Dynamic normalisation...")
 projections_dff = DFFC(np.swapaxes(projections,1,0).astype(np.float64), np.swapaxes(flats,1,0), np.swapaxes(darks,1,0), downsample=2)
 projections_dff = np.swapaxes(projections_dff, 1, 0)
 projections_dff[projections_dff > 0.0] = -np.log(projections_dff[projections_dff > 0.0])
@@ -230,9 +237,9 @@ plt.imshow(projections_dff[:,5,:], vmin=-0.1, vmax=0.4, cmap="gray")
 
 #%%
 # do reconstruction
-angles_rad = np.zeros(N_cut)
-angles_step_rad = (360.0/float(N_cut))*np.pi/180.0
-for i in range(0,N_cut):
+angles_rad = np.zeros(N_size)
+angles_step_rad = (360.0/float(N_size))*np.pi/180.0
+for i in range(0,N_size):
     angles_rad[i] = i*angles_step_rad
 
 RectoolsDIR = RecToolsDIR(DetectorsDimH = N_cut,  # DetectorsDimH # detector dimension (horizontal)
