@@ -24,26 +24,25 @@
 
 %% parameters
 % data
-addpath('../../Vincent_code_func/');
 
 % Directory with raw dark fields, flat fields and projections in .tif format
-projDir=  '~/Documents/DEV/DATA_TEMP/PSI_Phantom_White_Beam_Tomo/sample/';        
+projDir=  'C:/Users/lqg38422/Desktop/PSI_Phantom/projections/';        
 % Directory where the DYNAMIC flat field corrected projections are saved
-outDIRDFFC= '~/Documents/DEV/DATA_TEMP/PSI_Phantom_White_Beam_Tomo/dark-field/';   
+darkDir= 'C:/Users/lqg38422/Desktop/PSI_Phantom/dark-field/';   
 % Directory where the CONVENTIONAL flat field corrected projections are saved
-outDIRFFC=  '~/Documents/DEV/DATA_TEMP/PSI_Phantom_White_Beam_Tomo/flat-field/';    
+flatDir =  'C:/Users/lqg38422/Desktop/PSI_Phantom/flat-field/';    
 
 fileFormat = '.tif';
 numType = '%03d';
 
 disp('load projections:')
 sizeN = 2048;
-sizeCut = 200;
-projNo = 200;
+sizeCut = 500;
+projNo = 10; %200;
 
-projdata = single(zeros(sizeCut,sizeN,projNo));
+projdata = double(zeros(sizeCut,sizeN,projNo));
 for ii=1:projNo
- projection = single(imread([projDir 'IMAT00006388_PSI_cylinder_Sample_' num2str(ii-1,numType) fileFormat]));
+ projection = double(imread([projDir 'IMAT00006388_PSI_cylinder_Sample_' num2str(ii-1,numType) fileFormat]));
  projdata(:,:,ii) = projection(1:sizeCut,:);
 end
 
@@ -56,7 +55,7 @@ disp('load dark and flat fields:')
 disp('Load dark fields ...')
 dark=zeros([det_horiz det_vert 10]);
 for ii=1:10
-dark_temp = single(imread([outDIRDFFC 'IMAT00006385_PSI_cylinder_dark_' num2str(ii-1,numType) fileFormat]));
+dark_temp = double(imread([darkDir 'IMAT00006385_PSI_cylinder_dark_' num2str(ii-1,numType) fileFormat]));
 dark(:,:,ii) = dark_temp(1:sizeCut,:);
 end
 
@@ -67,19 +66,20 @@ meanDarkfield = mean(dark,3);
 %numType = '%04d'; 
 %disp('Load white fields ...')
 %for ii=1:29
-%    whiteVec(:,ii) = double(reshape((imread([outDIRFFC 'Flat_' num2str(ii-1,numType) fileFormat])),det_horiz*det_vert,1)) - meanDarkfield(:);    
+%    whiteVec(:,ii) = double(reshape((imread([flatDir 'Flat_' num2str(ii-1,numType) fileFormat])),det_horiz*det_vert,1)) - meanDarkfield(:);    
 %end
 
 % load corrected flat-fields
-flats = h5read('/home/algol/Documents/DEV/DATA_TEMP/PSI_Phantom_White_Beam_Tomo/flats_corrected.h5', '/flats');
+disp('Load flats fields ...')
+flats = double(h5read('C:/Users/lqg38422/Desktop/PSI_Phantom/flats_corrected.h5', '/flats'));
 flats_s = flats(1:sizeCut,:,:);
-whiteVec = reshape(flats_s, det_horiz*det_vert,59);
+whiteVec = double(reshape(flats_s, det_horiz*det_vert,59));
 
 mn = mean(whiteVec,2);
 clear flats flats_s
 %%
 [M,N] = size(whiteVec);
-Data = whiteVec;
+Data = double(whiteVec - repmat(mn,1,N));
 % substract mean flat field
 %Data = whiteVec - repmat(mn,1,N);
 %clear whiteVec dark
@@ -106,7 +106,7 @@ filteredEigenFlatfields=zeros(det_horiz, det_vert, 1+nrEigenflatfields);
 for ii=2:1+nrEigenflatfields
     display(['filter eigen flat field ' int2str(ii-1)])
     tmp=(EigenFlatfields(:,:,ii)-min(min(EigenFlatfields(:,:,ii))))/(max(max(EigenFlatfields(:,:,ii)))-min(min(EigenFlatfields(:,:,ii))));
-    [~,tmp2]=BM3D(1, single(tmp), 0.25);
+    [~,tmp2]=BM3D(1, double(tmp), 0.25);
     filteredEigenFlatfields(:,:,ii)=(tmp2*(max(max(EigenFlatfields(:,:,ii))) - min(min(EigenFlatfields(:,:,ii))))) + min(min(EigenFlatfields(:,:,ii)));
 end
 %filteredEigenFlatfields = EigenFlatfields; 
@@ -115,7 +115,7 @@ end
 % options output images
 scaleOutputImages=  [0 1];          %output images are scaled between these values
 
-norm_proj_CFF = single(zeros(det_horiz, det_vert, projections));
+norm_proj_CFF = double(zeros(det_horiz, det_vert, projections));
 
 meanVector=zeros(1,length(nrImage));
 for ii=1:length(nrImage)
@@ -127,9 +127,9 @@ for ii=1:length(nrImage)
     tmp(isnan(tmp))=0.0;
     meanVector(ii)= mean(tmp(:));
     
+    tmp(tmp>0)=-log(tmp(tmp>0));
     tmp(tmp<0)=0;
-    tmp=-log(tmp);
-    norm_proj_CFF(:,:,ii) = single(tmp);
+    norm_proj_CFF(:,:,ii) = double(tmp);
     tmp(isinf(tmp))=10^5;
     %tmp=(tmp-scaleOutputImages(1))/(scaleOutputImages(2)-scaleOutputImages(1));
     %tmp=uint16((2^16-1)*tmp);
@@ -137,8 +137,8 @@ for ii=1:length(nrImage)
 end
 figure; imshow(norm_proj_CFF(:,:,5), [-0.1 0.4]);
 %%
-norm_proj_DFF = single(zeros(det_horiz, det_vert, projections));
-downsample=         4;              % amount of downsampling during dynamic flat field estimation (integer between 1 and 20)
+norm_proj_DFF = double(zeros(det_horiz, det_vert, projections));
+downsample=2;              % amount of downsampling during dynamic flat field estimation (integer between 1 and 20)
 
 xArray=zeros(nrEigenflatfields,length(nrImage));
 for ii=1:length(nrImage)
@@ -161,7 +161,7 @@ for ii=1:length(nrImage)
     tmp=tmp/mean(tmp(:))*meanVector(ii);
     tmp(tmp<0)=0;
     tmp=-log(tmp);
-    norm_proj_DFF(:,:,ii) = single(tmp);    
+    norm_proj_DFF(:,:,ii) = double(tmp);    
     tmp(isinf(tmp))=10^5;
     %tmp=(tmp-scaleOutputImages(1))/(scaleOutputImages(2)-scaleOutputImages(1));
     %tmp=uint16((2^16-1)*tmp);
