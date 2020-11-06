@@ -12,13 +12,6 @@ from tomobar.methodsDIR import RecToolsDIR
 import matplotlib.pyplot as plt
 import h5py
 
-# =============================================================================
-# COMMENT SECTION
-#   - The line D1, V1 = np.linalg.eig(cov(F.T)) in PA returns something different
-#   - Denoising takes a lot of time and doesn't change much
-# =============================================================================
-
-
 PROJECTIONS_PATH = 'C:/Users/lqg38422/Desktop/PSI_Phantom/projections/'
 FLATS_PATH = 'C:/Users/lqg38422/Desktop/PSI_Phantom/flat-field/'
 DARKS_PATH = 'C:/Users/lqg38422/Desktop/PSI_Phantom/dark-field/'
@@ -92,11 +85,11 @@ import bm3d
 
 def DFFC(data, flats, darks, downsample=20):
     # Load frames
-    meanDarkfield = np.mean(darks, axis=0, dtype=np.float64)
-    whiteVect = np.zeros((flats.shape[0], flats.shape[1]*flats.shape[2]), dtype=np.float64)
-    for i in range(len(flats)):
+    meanDarkfield = np.mean(darks, axis=1, dtype=np.float64)
+    whiteVect = np.zeros((flats.shape[1], flats.shape[0]*flats.shape[2]), dtype=np.float64)
+    for i in range(flats.shape[1]):
         #whiteVect[k] = ff.flatten() - meanDarkfield.flatten()
-        whiteVect[i] = flats[i].flatten()
+        whiteVect[i] = flats[:,i,:].flatten()
     mn = np.mean(whiteVect, axis=0)
 
     # Substract mean flat field
@@ -131,7 +124,7 @@ def DFFC(data, flats, darks, downsample=20):
         F = flatFields - mean_flat_fields_EFF
         # Checkpoint - bug in np.cov - Matlab size is (3170304, 59)
         # F.T is Matlab F
-        D1, V1 = np.linalg.eig(cov(F.T))
+        D1, V1 = np.linalg.eig(np.cov(F))
         selection = np.zeros((1,H))
         # mean + 2 * std
         selection[:,D1>(np.mean(keepTrack, axis=1) + 2 * np.std(keepTrack, axis=1, ddof=1))] = 1
@@ -150,7 +143,7 @@ def DFFC(data, flats, darks, downsample=20):
     V1 = V1[:,idx]
 
     # Calculation eigen flat fields
-    C, H, W = data.shape
+    H, C, W = data.shape
     eig0 = mn.reshape((H,W))
     EFF = np.zeros((nrEigenflatfields+1, H, W)) #n_EFF + 1 eig0
     print("Calculating EFFs:")
@@ -203,13 +196,12 @@ def DFFC(data, flats, darks, downsample=20):
 
         return x.x
 
-    n_im = len(data)
+    H, C, W = data.shape
     print("DFFC:")
-    clean_DFFC = np.zeros((n_im, H, W), dtype=np.float64)
-    for i in range(n_im):
+    clean_DFFC = np.zeros((H, C, W), dtype=np.float64)
+    for i in range(C):
         if i%25 == 0: print("Iteration", i)
-        #print("Estimation projection:")
-        projection = data[i]
+        projection = data[:,i,:]
         # Estimate weights for a single projection
         meanFF = EFF[0]
         FF = EFF[1:]
@@ -219,20 +211,19 @@ def DFFC(data, flats, darks, downsample=20):
         FFeff = np.zeros(meanDarkfield.shape)
         for j in range(nrEigenflatfields):
             FFeff = FFeff + x[j] * EFF[j+1]
-        epsilon = 10e-10
-        tmp = np.divide((projection - meanDarkfield),(EFF[0] + FFeff) + epsilon)
-        clean_DFFC[i] = tmp
+        tmp = np.divide((projection - meanDarkfield),(EFF[0] + FFeff))
+        clean_DFFC[:,i,:] = tmp
 
     return clean_DFFC
 
 #%%
 print("Dynamic normalisation...")
-projections_dff = DFFC(np.swapaxes(projections,1,0).astype(np.float64), np.swapaxes(flats,1,0), np.swapaxes(darks,1,0), downsample=2)
-projections_dff = np.swapaxes(projections_dff, 1, 0)
+projections_dff = DFFC(projections, flats, darks, downsample=2)
 projections_dff[projections_dff > 0.0] = -np.log(projections_dff[projections_dff > 0.0])
 projections_dff[projections_dff < 0.0] = 0.0 # remove negative values
 
 plt.figure()
+plt.axis('off')
 plt.imshow(projections_dff[:,5,:], vmin=-0.1, vmax=0.4, cmap="gray")
 
 #%%
